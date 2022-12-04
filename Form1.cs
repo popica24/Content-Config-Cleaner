@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Windows.Forms;
 using IniParser;
+using MoreLinq;
 using System.Text.RegularExpressions;
 
 namespace EpromSolution
@@ -14,6 +15,9 @@ namespace EpromSolution
         FileIniDataParser parser;
         public string InputPath;
         public IEnumerable<string> ChunkOfText;
+        
+        public List<string> FoldersToDelete = new List<string>();
+        public List<string> Logs = new List<string>();
         public int trimmed = 0;
         public int pass = 0;
         public int total = 0;
@@ -27,6 +31,7 @@ namespace EpromSolution
                 StartBtn.Enabled = true;
             };
             OpenInput.Filter = "Text|*.txt|All|*.*";
+
         }
 
         private void OpenBtn_Click(object sender, EventArgs e)
@@ -64,26 +69,26 @@ namespace EpromSolution
                             if (string.IsNullOrEmpty(RootFolder))
                             {
                                 RootFolder = Directory.GetParent(line).ToString();
-                           
+
                             }
                             else
                             {
-                               
+
                                 try
                                 {
                                     EraseFile(line);
                                 }
                                 catch (Exception ex)
                                 {
-                                   // richTextBox1.Text += ex.Message + '\n';
-                                   
+                                    richTextBox1.Text += "Error Trimmig "+line+"--"+ ex.Message + '\n';
+
                                 }
-                              
+
                             }
                         }
                     }
                 }
-                FinalStatus.Text += "Counted and trimmed " + total.ToString() + " batches";
+                FinalStatus.Text += "Counted and trimmed " +trimmed + " of "+total.ToString() + " batches";
             }
         }
         private void StartBtn_Click(object sender, EventArgs e)
@@ -109,10 +114,15 @@ namespace EpromSolution
                             }
                             catch (Exception ex)
                             {
-                                richTextBox1.Text += ex.Message + '\n';
+                                richTextBox1.Text +=" Error processing batch at Root"+RootFolder+"--"+ ex.Message + '\n';
+
+
+                                Logs.Add("RootFolder : " + RootFolder + '\n' + "ChildFolders " + DependentFolders.ToString());
+                                
                                 continue;
                             }
-                            finally {
+                            finally
+                            {
                                 RootFolder = String.Empty;
                                 DependentFolders.Clear();
                             }
@@ -136,9 +146,18 @@ namespace EpromSolution
                     }
                 }
             }
-
+          
+            for(int i = 0; i < FoldersToDelete.Count; i++)
+            {
+                try
+                {
+                    Directory.Delete(FoldersToDelete[i], true);
+                }
+                catch(Exception ex) { continue; }
+            }
             FinalStatus.Text +=
                 "Successfully processed " + pass.ToString() + " of " + total.ToString() + "\n";
+            File.WriteAllLines("EPROMLOGS.txt",Logs);
         }
         #region
         private string GetVersionName(string path)
@@ -192,6 +211,7 @@ namespace EpromSolution
                 list.RemoveAt(list.IndexOf(IndexToRemove));
             }
             File.WriteAllLines(Path.Combine(ParentFolder, "contents.ini"), list);
+            trimmed++;
         }
         private string GetVeryNextAvalabileName(string name)
         {
@@ -200,11 +220,20 @@ namespace EpromSolution
 
             return FileTextOnly + (Convert.ToInt32(FileNumbersOnly) + 1).ToString() + ".bin";
         }
+        private string GetDigit(string Name)
+        {
+            return Regex.Match(Name, @"\d+").Value;
+        }
         private void InsertInFolder(string binFile, string rootFolder)
         {
-            var LastName =
-                "Eprom" + Directory.GetFiles(rootFolder, "*.bin").Length.ToString() + ".bin";
-            var Name = GetVeryNextAvalabileName(LastName);
+            var files = Directory.EnumerateFiles(rootFolder, "*.bin");
+            var min = Path.GetFileName(files.First());
+            foreach(var f in files)
+            {
+                if (Convert.ToInt32(GetDigit(Path.GetFileName(f))) > Convert.ToInt32(GetDigit(min)))
+                    min = Path.GetFileName(f);
+            }
+            var Name = GetVeryNextAvalabileName(min);
             File.Move(binFile, Path.Combine(rootFolder, Name));
         }
         private void InsertInContents(List<string> VersionNames, string path)
@@ -262,8 +291,8 @@ namespace EpromSolution
 
             foreach (var F in DependentFiles)
             {
-               
-                foreach (var BinFile in Directory.GetFiles(Directory.GetParent(F).ToString(), "*.bin"))
+
+                foreach (var BinFile in Directory.GetFiles(Directory.GetParent(F).ToString(), "*.bin").OrderBy(BinFile=>Convert.ToInt32(GetDigit(Path.GetFileName(BinFile)))))
                 {
                     var x = BinFile;
                     var target = GetVersionName(BinFile);
@@ -273,13 +302,17 @@ namespace EpromSolution
                     {
                         Quoran.Add(target);
                         InsertInFolder(BinFile, rootFolder);
+                        
                     }
                 }
-                Directory.Delete(Directory.GetParent(F).ToString(), true);
+                InsertInContents(Quoran, Path.Combine(rootFolder, "contents.ini"));
+                FoldersToDelete.Add(Directory.GetParent(F).ToString());
+                Quoran.Clear();
             }
 
-            InsertInContents(Quoran, Path.Combine(rootFolder, "contents.ini"));
+           
             pass++;
+          
             richTextBox1.Text += rootFolder + "-----------" + pass + "\n";
         }
         private void richTextBox1_TextChanged(object sender, EventArgs e)
