@@ -15,7 +15,7 @@ namespace EpromSolution
         FileIniDataParser parser;
         public string InputPath;
         public IEnumerable<string> ChunkOfText;
-        
+        public List<string> Roots = new List<string>();
         public List<string> FoldersToDelete = new List<string>();
         public List<string> Logs = new List<string>();
         public int trimmed = 0;
@@ -77,6 +77,7 @@ namespace EpromSolution
                                 try
                                 {
                                     EraseFile(line);
+                                    trimmed++;
                                 }
                                 catch (Exception ex)
                                 {
@@ -111,6 +112,7 @@ namespace EpromSolution
                             try
                             {
                                 ProcessBatch(RootFolder, DependentFolders);
+                                pass++;
                             }
                             catch (Exception ex)
                             {
@@ -119,7 +121,7 @@ namespace EpromSolution
 
                                 Logs.Add("RootFolder : " + RootFolder + '\n' + "ChildFolders " + DependentFolders.ToString());
                                 
-                                continue;
+                               
                             }
                             finally
                             {
@@ -132,32 +134,33 @@ namespace EpromSolution
                             if (string.IsNullOrEmpty(RootFolder))
                             {
                                 RootFolder = Directory.GetParent(line).ToString();
+                                if(!Roots.Contains(RootFolder)) Roots.Add(RootFolder);
                             }
                             else
-                                try
-                                {
+                               
                                     DependentFolders.Add(line);
-                                }
-                                catch (Exception ex)
-                                {
-                                    continue;
-                                }
                         }
                     }
                 }
             }
-          
-            for(int i = 0; i < FoldersToDelete.Count; i++)
+
+            for (int i = 0; i < FoldersToDelete.Count; i++)
             {
                 try
                 {
                     Directory.Delete(FoldersToDelete[i], true);
                 }
-                catch(Exception ex) { continue; }
+                catch (Exception ex) { continue; }
+            }
+            try { RefactorBatch(Roots); }
+            catch(Exception ex)
+            {
+                
             }
             FinalStatus.Text +=
                 "Successfully processed " + pass.ToString() + " of " + total.ToString() + "\n";
-            File.WriteAllLines("EPROMLOGS.txt",Logs);
+            File.WriteAllLines("EPROMLOGS.txt", Logs);
+           
         }
         #region
         private string GetVersionName(string path)
@@ -202,16 +205,30 @@ namespace EpromSolution
 
             if (Convert.ToInt32(Digits) == 1)
             {
-                var IndexToRemove = list.FirstOrDefault(s => s.Contains("VersionName ="));
-                list.RemoveAt(list.IndexOf(IndexToRemove));
+                var IndexToRemoveVName = list.FirstOrDefault(s => s.Contains("VersionName ="));
+               
+                list.RemoveAt(list.IndexOf(IndexToRemoveVName));
             }
             else
             {
-                var IndexToRemove = list.FirstOrDefault(s => s.Contains("VersionName_v" + Digits));
-                list.RemoveAt(list.IndexOf(IndexToRemove));
+                var IndexToRemoveVName = list.FirstOrDefault(s => s.Contains("VersionName_v" + Digits));
+      
+                list.RemoveAt(list.IndexOf(IndexToRemoveVName));
+                
+            }
+            if (Convert.ToInt32(Digits) == 1)
+            {
+                var IndexToRemoveFName = list.FirstOrDefault(s => s.Contains("Filename ="));
+
+                list.RemoveAt(list.IndexOf(IndexToRemoveFName));
+            }
+            else
+            {
+                var IndexToRemoveFName = list.FirstOrDefault(s => s.Contains("Filename_v" + Digits));
+                list.RemoveAt(list.IndexOf(IndexToRemoveFName));
             }
             File.WriteAllLines(Path.Combine(ParentFolder, "contents.ini"), list);
-            trimmed++;
+           
         }
         private string GetVeryNextAvalabileName(string name)
         {
@@ -284,11 +301,61 @@ namespace EpromSolution
                 "NumVersions = " + NumVersions;
             File.WriteAllLines(path, list);
         }
+        private string RenameVersionName(string line,int i)
+        {
+            var value = line.Substring(line.LastIndexOf("=")).Trim();
+            if (i == 1) return "VersionName = " + value;
+            else return "VersionName_v" + i.ToString() + " = " + value;
+        }
+        private string RenameFileName(string line,int i)
+        {
+            var value = line.Substring(line.LastIndexOf("=")).Trim();
+            if (i == 1) return "Filename = Eprom1.bin" + value;
+            else return "Filename_v" + i.ToString() + " = Eprom" +i.ToString()+".bin" ;
+        }
+        private void RefactorBatch(List<string> roots)
+        {
+                      
+            foreach(var Folder in roots)
+            {
+                int VnameI = 1;
+                int FnameI = 1;
+                var BinFiles = Directory.GetFiles(Folder, "*.bin").OrderBy(BinFile => Convert.ToInt32(GetDigit(Path.GetFileName(BinFile))));
+                int i = 1;
+                foreach(var BinFile in BinFiles)
+                {
+                    var oldName = Path.Combine(Directory.GetParent(BinFile).ToString(), Path.GetFileName(BinFile)); 
+                   var newName = Path.Combine(Directory.GetParent(BinFile).ToString(), "Eprom" + i.ToString() + ".bin");
+                    if (!oldName.Equals(newName)) File.Move(oldName, newName);
+                    i++;
+                }
+                var DependentFolderContent = parser.ReadFile(Path.Combine(Folder,"contents.ini"));
+                var DependentFolderString = DependentFolderContent.ToString();
+                List<string> list = new List<string>(
+                    Regex.Split(DependentFolderString, Environment.NewLine)
+                );
+                for(int q = 0; q < list.Count; q++)
+                {
+                    if (list[q].Contains("VersionName"))
+                    {
+                        list[q] = RenameVersionName(list[q], VnameI);
+                        VnameI++;
+                    }
+                    if (list[q].Contains("Filename"))
+                    {
+                        list[q] = RenameFileName(list[q], FnameI);
+                        FnameI++;
+                    }
+                }
+                File.WriteAllLines(Path.Combine(Folder, "contents.ini"), list);
+            }
+            
+        }
         #endregion
         private void ProcessBatch(string rootFolder, List<string> DependentFiles)
         {
             List<string> Quoran = new List<string>();
-
+            List<string> Bible = new List<string>();
             foreach (var F in DependentFiles)
             {
 
@@ -311,7 +378,7 @@ namespace EpromSolution
             }
 
            
-            pass++;
+
           
             richTextBox1.Text += rootFolder + "-----------" + pass + "\n";
         }
