@@ -59,7 +59,7 @@ namespace EpromSolution
                         string line = sr.ReadLine().Trim();
                         if (line == "")
                         {
-                            total++;
+                         
                             RootFolder = String.Empty;
                         }
                         else
@@ -67,6 +67,7 @@ namespace EpromSolution
                             if (string.IsNullOrEmpty(RootFolder))
                             {
                                 RootFolder = Directory.GetParent(line).ToString();
+                                Roots.Add(RootFolder);
                             }
                             else
                             {
@@ -77,121 +78,101 @@ namespace EpromSolution
                                 }
                                 catch (Exception ex)
                                 {
-                                    richTextBox1.Text += "Error Trimmig " + line + " --- " + ex.Message + '\n';
-                                    Logs.Add("Error Trimmig " + line + " --- " + ex.Message + '\n');
-
+                                    richTextBox1.Text += "Error --- " + Directory.GetParent(line).ToString().Substring(Directory.GetParent(line).ToString().LastIndexOf(@"\") + 1) + " --- " + ex.Message + '\n';
+                                    Logs.Add("Error Trimmig " + ex.Message + '\n');
                                 }
 
                             }
                         }
                     }
                 }
-                FinalStatus.Text += "Counted" + total.ToString() + " batches";
+                FinalStatus.Text += "Counted " + Roots.Count.ToString() + " batches";
             }
+
         }
+
         private void StartBtn_Click(object sender, EventArgs e)
         {
             richTextBox1.Text = "";
             total = 0;
             FinalStatus.Text = "";
-            var RootFolder = string.Empty;
-            List<string> DependentFolders = new List<string>();
+            var RootFolder = String.Empty;
             using (var fs = new FileStream(InputPath, FileMode.Open, FileAccess.Read))
             {
                 using (var sr = new StreamReader(fs, Encoding.UTF8))
                 {
                     while (!sr.EndOfStream)
                     {
+
                         string line = sr.ReadLine().Trim();
-                        if (line == "")
+                        if (line.Equals(""))
                         {
                             total++;
+                            RootFolder = String.Empty;
+                            continue;
+                        }
+                        if (String.IsNullOrEmpty(RootFolder) && !line.Equals(""))
+                            RootFolder = Directory.GetParent(line).ToString();
+                        if (!Directory.GetParent(line).ToString().Equals(RootFolder))
                             try
                             {
-                                ProcessBatch(RootFolder, DependentFolders);
-                                pass++;
+                                ProcessBatch(RootFolder, line);
                             }
                             catch (Exception ex)
                             {
-                                richTextBox1.Text += "Error processing batch at Root " + RootFolder + " --- " + ex.Message + '\n';
-                                var s = String.Empty;
-                                foreach (var x in DependentFolders)
-                                    s += x.ToString() + " | ";
-                                Logs.Add("Error processing batch at Root " + RootFolder + " --- " + s + '\n'+ex.Message+'\n');
+                                richTextBox1.Text = "Error --- " + Directory.GetParent(line).ToString().Substring(Directory.GetParent(line).ToString().LastIndexOf(@"\") + 1)+" --- "+ex.Message;
+                                Logs.Add("Error Processing " + ex.Message + '\n');
                             }
-                            finally
-                            {
-                                RootFolder = String.Empty;
-                                DependentFolders.Clear();
-                            }
-                        }
-                        else
-                        {
-                            if (string.IsNullOrEmpty(RootFolder))
-                            {
-                                RootFolder = Directory.GetParent(line).ToString();
-                                if (!Roots.Contains(RootFolder)) Roots.Add(RootFolder);
-                            }
-                            else
-
-                                DependentFolders.Add(line);
-                        }
                     }
                 }
             }
-            var ftd = FoldersToDelete;
-            var r = Roots;
-            var newList = FoldersToDelete.Except(Roots).ToList();
-            for (int i = 0; i < newList.Count; i++)
-            {
-                try
-                {
-                    Directory.Delete(newList[i], true);
-                }
-                catch (Exception ex)
-                {
-                    richTextBox1.Text += "Error Deleting Folder " + newList[i] + '\n';
-                    Logs.Add("Error Deleting Folder " + newList[i] + '\n');
-                }
-            }
-            try
-            {
-                RefactorBatch(Roots);
-            }
-            catch (Exception ex)
+
+        
+            foreach(var R in Roots)
             {
 
+              
+                try {
+                    if (Directory.GetFiles(R, "*.bin").Length == 0)
+                    {
+                        Directory.Delete(R, true);
+                    }
+                    }
+              catch(Exception ex) { }
             }
-            FinalStatus.Text +=
-              "Successfully processed " + pass.ToString() + " of " + total.ToString() + "\n";
+            FinalStatus.Text = "Operation Completed";
             File.WriteAllLines("EPROMLOGS.txt", Logs);
 
         }
         #region
-        private string GetVersionName(string path)
+        private void RefactorBatch(string path)
         {
-            var Folder = Directory.GetParent(path).ToString();
-            var FileName = Path.GetFileName(path).ToString();
-            var Digits = Regex.Match(FileName, @"\d+").Value.ToString();
-            var DependentFolderContent = parser.ReadFile(Path.Combine(Folder, "contents.ini"));
-            var DependentFolderString = DependentFolderContent.ToString();
-            List<string> list = new List<string>(
-              Regex.Split(DependentFolderString, Environment.NewLine)
-            );
-
-            if (Convert.ToInt32(Digits) == 1)
+            var i = 1;
+            foreach(var F in Directory.GetFiles(path, "*.bin"))
             {
-                return list.FirstOrDefault(s => s.Contains("VersionName"))
-                  .Substring(
-                    list.FirstOrDefault(s => s.Contains("VersionName")).LastIndexOf('=') + 1
-                  )
-                  .Trim();
+                var oldName = F;
+                var newName = Path.Combine(path, "Eprom" + i + ".bin");
+                File.Move(oldName, newName);
+                i++;
             }
-            string result = list.FirstOrDefault(s => s.Contains("VersionName_v" + Digits));
-            if (string.IsNullOrEmpty(result))
-                return null;
+            var _temp = parser.ReadFile(Path.Combine(path, "contents.ini")).ToString();
+            List<string> Contents = new List<string>(
+              Regex.Split(_temp, Environment.NewLine)
+            );
+            var j = 1;
+            foreach(var l in Contents.Where(l => l.Contains("VersionName")).ToList())
+            {
+                Contents[Contents.IndexOf(l)]= ProcessVersionName(l, j);
+                j++;
+            }
+            var k = 1;
+            foreach(var l in Contents.Where(l => l.Contains("Filename")).ToList())
+            {
+                Contents[Contents.IndexOf(l)] = ProcessFileName(l, k);
+                k++;
+            }
+            File.WriteAllLines(Path.Combine(path, "contents.ini"), Contents);
 
-            return result.Substring(result.LastIndexOf('=') + 1).Trim();
         }
         private void EraseFile(string path)
         {
@@ -234,162 +215,102 @@ namespace EpromSolution
             }
             File.WriteAllLines(Path.Combine(ParentFolder, "contents.ini"), list);
 
-        }
-        private string GetVeryNextAvalabileName(string name)
+        } //Deletes VersionName, Filename and File
+        private int GetDigit(string Name)
         {
-            var FileTextOnly = Regex.Match(name, @"^[^0-9]*").Value;
-            var FileNumbersOnly = Regex.Match(name, @"\d+").Value;
+            return Convert.ToInt32(Regex.Match(Name, @"\d+").Value);
+        }   //Returns the digit from a string
+        private string ProcessVersionName(string VersionName, int I) //VersionName_vx=xxxxx -->>> VersionName_vi=xxxxx
+        {
+            var Value = VersionName.Substring(VersionName.IndexOf("=") + 1).Trim();
+            if (I == 1) return "VersionName = " + Value;
 
-            return FileTextOnly + (Convert.ToInt32(FileNumbersOnly) + 1).ToString() + ".bin";
+            var x = "VersionName_v" + I.ToString() + " = " + Value;
+            return x;
+
         }
-        private string GetDigit(string Name)
+        private string ProcessFileName(string FileName, int J)
         {
-            return Regex.Match(Name, @"\d+").Value;
-        }
-        private void InsertInFolder(string binFile, string rootFolder)
+            if (J == 1) return "Filename = Eprom1.bin";
+            return "Filename_v" + J.ToString() + " = Eprom" + J.ToString() + ".bin";
+        }    //Filename_vx = Epromx.bin -->>> Filename_vi = Epromi.bin
+        private void InsertInContents(string Root, List<string> RootContents, List<string> Contents, string Name)
         {
-            var files = Directory.EnumerateFiles(rootFolder, "*.bin");
-            var min = Path.GetFileName(files.First());
-            foreach (var f in files)
+            string LastVersionName = RootContents.LastOrDefault(s => s.Contains("VersionName")); //VersionName_vx = xxxxx
+            int LastVersionNameIndex = RootContents.IndexOf(LastVersionName);
+            int I = GetDigit(LastVersionName) + 1;
+       
+            foreach (var VersionName in Contents.Where(VersionName => VersionName.Contains("VersionName")))
             {
-                if (Convert.ToInt32(GetDigit(Path.GetFileName(f))) > Convert.ToInt32(GetDigit(min)))
-                    min = Path.GetFileName(f);
+
+                LastVersionNameIndex++;
+                RootContents.Insert(LastVersionNameIndex, ProcessVersionName(VersionName, I) + "   --->>>  " + Name.Substring(Name.LastIndexOf(@"\")+1));
+    
+                      I++;
+
             }
-            var Name = GetVeryNextAvalabileName(min);
-            File.Move(binFile, Path.Combine(rootFolder, Name));
-        }
-        private void InsertInContents(List<string> VersionNames, string path)
-        {
-            var DependentFolderContent = parser.ReadFile(path);
-            var DependentFolderString = DependentFolderContent.ToString();
-            List<string> list = new List<string>(
-              Regex.Split(DependentFolderString, Environment.NewLine)
-            );
-           
-            var LastIndexOfVersionName = list.LastOrDefault(s => s.Contains("VersionName_v"));
-            int LastInfdexOfVersionNameDigits = Convert.ToInt32(
-              Regex.Match(LastIndexOfVersionName, @"\d+").Value
-            );
-            var VNIndex = list.IndexOf(LastIndexOfVersionName) + 1;
-            foreach (var entry in VersionNames)
+
+            string LastFileName = RootContents.LastOrDefault(s => s.Contains("Filename")); int LastFileNameIndex = RootContents.IndexOf(LastFileName); int J = GetDigit(LastFileName) + 1; foreach (var FileName in Contents.Where(FileName => FileName.Contains("Filename")))
             {
-                LastInfdexOfVersionNameDigits += 1;
-                list.Insert(
-                  VNIndex,
-                  "VersionName_v" + LastInfdexOfVersionNameDigits.ToString() + " = " + entry
+                LastFileNameIndex++;
+                RootContents.Insert(LastFileNameIndex, ProcessFileName(FileName, J));
+                J++;
+            }
+
+            File.WriteAllLines(Path.Combine(Root, "contents.ini"), RootContents);
+        } //Inserts in contents.ini the Filename, and versionname and WRITES it.
+        private void CopyToFolder(string Root, string Child)
+        {
+            int i = 1;
+            foreach (var F in Directory.GetFiles(Root, "*.bin").OrderBy(F => Convert.ToInt32(GetDigit(Path.GetFileName(F)))))
+            {
+                var oldName = Path.Combine(Directory.GetParent(F).ToString(), Path.GetFileName(F));
+                var newName = Path.Combine(Directory.GetParent(F).ToString(), "Eprom" + i.ToString() + ".bin");
+                if (!oldName.Equals(newName)) File.Move(oldName, newName);
+                i++;
+            }
+
+            foreach (var F in Directory.GetFiles(Child, "*.bin").OrderBy(F => Convert.ToInt32(GetDigit(Path.GetFileName(F)))))
+            {
+                var oldName = Path.Combine(Directory.GetParent(F).ToString(), Path.GetFileName(F));
+                var newName = Path.Combine(Root, "Eprom" + i.ToString() + ".bin");
+                File.Move(oldName, newName);
+                i++;
+            }
+        }      //Inserts in the Root folder, the child files on the next avalabile itterators.
+        #endregion 
+        private void ProcessBatch(string Root, string Child) {
+            if (!(Directory.GetFiles(Directory.GetParent(Child).ToString(),"*.bin").Length==0))
+            {
+                var _temp = parser.ReadFile(Path.Combine(Directory.GetParent(Child).ToString(), "contents.ini")).ToString();
+                List<string> ChildContents = new List<string>(
+                  Regex.Split(_temp, Environment.NewLine)
                 );
-                VNIndex += 1;
-            }
-            var LastIndexOfFileName = list.LastOrDefault(s => s.Contains("Filename_v"));
-            int LastIndexOfFileNameDigits = Convert.ToInt32(
-              Regex.Match(LastIndexOfFileName, @"\d+").Value
-            );
-            var FNIndex = list.IndexOf(LastIndexOfFileName) + 1;
-            for (int i = 0; i < VersionNames.Count; i++)
-            {
-                LastIndexOfFileNameDigits++;
-                list.Insert(
-                  FNIndex,
-                  "Filename_v" +
-                  LastIndexOfFileNameDigits.ToString() +
-                  " = Eprom" +
-                  LastIndexOfFileNameDigits.ToString() +
-                  ".bin"
+
+                _temp = parser.ReadFile(Path.Combine(Root, "contents.ini")).ToString();
+                List<string> RootContents = new List<string>(
+                  Regex.Split(_temp, Environment.NewLine)
                 );
-                FNIndex++;
+                _temp = String.Empty;
+                InsertInContents(Root, RootContents, ChildContents, Directory.GetParent(Child).ToString());
+                CopyToFolder(Root, Directory.GetParent(Child).ToString());
+
+               
+                    Directory.Delete(Directory.GetParent(Child).ToString(),true);
+                
+                
+
+                var i = RootContents.IndexOf(RootContents.LastOrDefault(s => s.Contains("NumVersions")));
+                var v = "NumVersions = " + Directory.GetFiles(Root, "*.bin").Length.ToString();
+                RootContents[i] = v;
+                File.WriteAllLines(Path.Combine(Root, "contents.ini"), RootContents);
+               
             }
-            
-            File.WriteAllLines(path, list);
-        }
-        private string RenameVersionName(string line, int i)
-        {
-            var value = line.Substring(line.LastIndexOf("=")+1).Trim();
-            if (i == 1) return "VersionName = " + value;
-            else return "VersionName_v" + i.ToString() + " = " + value;
-        }
-        private string RenameFileName(string line, int i)
-        {
-            var value = line.Substring(line.LastIndexOf("=")).Trim();
-            if (i == 1) return "Filename = Eprom1.bin";
-            else return "Filename_v" + i.ToString() + " = Eprom" + i.ToString() + ".bin";
-        }
-        private void RefactorBatch(List<string> roots)
-        {
+        }     //Does the job
 
-            foreach (var Folder in roots)
-            {
-                int VnameI = 1;
-                int FnameI = 1;
-                var BinFiles = Directory.GetFiles(Folder, "*.bin").OrderBy(BinFile => Convert.ToInt32(GetDigit(Path.GetFileName(BinFile))));
-                int i = 1;
-                foreach (var BinFile in BinFiles)
-                {
-                    var oldName = Path.Combine(Directory.GetParent(BinFile).ToString(), Path.GetFileName(BinFile));
-                    var newName = Path.Combine(Directory.GetParent(BinFile).ToString(), "Eprom" + i.ToString() + ".bin");
-                    if (!oldName.Equals(newName)) File.Move(oldName, newName);
-                    i++;
-                }
-                var DependentFolderContent = parser.ReadFile(Path.Combine(Folder, "contents.ini"));
-                var DependentFolderString = DependentFolderContent.ToString();
-                List<string> list = new List<string>(
-                  Regex.Split(DependentFolderString, Environment.NewLine)
-                );
-                for (int q = 0; q < list.Count; q++)
-                {
-                    if (list[q].Contains("VersionName"))
-                    {
-                        list[q] = RenameVersionName(list[q], VnameI);
-                        VnameI++;
-                    }
-                    if (list[q].Contains("Filename"))
-                    {
-                        list[q] = RenameFileName(list[q], FnameI);
-                        FnameI++;
-                    }
-                }
-                var NumVersions = Directory.GetFiles(Folder, "*.bin").Length;
-                list[list.IndexOf(list.LastOrDefault(s => s.Contains("NumVersions")))] =
-                  "NumVersions = " + NumVersions;
-                File.WriteAllLines(Path.Combine(Folder, "contents.ini"), list);
-            }
-
-        }
-        #endregion
-        private void ProcessBatch(string rootFolder, List<string> DependentFiles)
-        {
-            List<string> Quoran = new List<string>();
-            foreach (var F in DependentFiles)
-            {
-                var ParentF = Directory.GetParent(F).ToString();
-              
-                if (ParentF.Equals(rootFolder)) continue;
-                foreach (var BinFile in Directory.GetFiles(Directory.GetParent(F).ToString(), "*.bin").OrderBy(BinFile => Convert.ToInt32(GetDigit(Path.GetFileName(BinFile)))))
-                {
-                    var x = BinFile;
-                    var target = GetVersionName(BinFile);
-                    if (string.IsNullOrEmpty(target))
-                        continue;
-                    else
-                    {
-                        Quoran.Add(target);
-                        InsertInFolder(BinFile, rootFolder);
-
-                    }
-                }
-                InsertInContents(Quoran, Path.Combine(rootFolder, "contents.ini"));
-
-                Quoran.Clear();
-
-                if (!FoldersToDelete.Any(P => P.Equals(Directory.GetParent(F))))
-                    FoldersToDelete.Add(Directory.GetParent(F).ToString());
-            }
-
-            richTextBox1.Text += rootFolder + "-----------" + pass + "\n";
-        }
-        private void richTextBox1_TextChanged(object sender, EventArgs e)
-        {
-            richTextBox1.SelectionStart = richTextBox1.Text.Length;
-            richTextBox1.ScrollToCaret();
-        }
+    private void richTextBox1_TextChanged(object sender, EventArgs e)
+    {
+        richTextBox1.SelectionStart = richTextBox1.Text.Length;
+        richTextBox1.ScrollToCaret();
     }
-}
+}}
