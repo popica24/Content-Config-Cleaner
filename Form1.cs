@@ -48,7 +48,7 @@ namespace EpromSolution
                 richTextBox1.Text += ex.Message;
                 StartBtn.Enabled = false;
             }
-            var RootFolder = String.Empty;
+           /* var RootFolder = String.Empty;
 
             using (var fs = new FileStream(InputPath, FileMode.Open, FileAccess.Read))
             {
@@ -75,7 +75,7 @@ namespace EpromSolution
                                 try
                                 {
                                     EraseFile(line);
-                                }
+                                 }
                                 catch (Exception ex)
                                 {
                                     richTextBox1.Text += "Error --- " + Directory.GetParent(line).ToString().Substring(Directory.GetParent(line).ToString().LastIndexOf(@"\") + 1) + " --- " + ex.Message + '\n';
@@ -88,11 +88,12 @@ namespace EpromSolution
                 }
                 FinalStatus.Text += "Counted " + Roots.Count.ToString() + " batches";
             }
-
+*/
         }
 
         private void StartBtn_Click(object sender, EventArgs e)
         {
+            var _temp = new List<string>();
             richTextBox1.Text = "";
             total = 0;
             FinalStatus.Text = "";
@@ -103,31 +104,93 @@ namespace EpromSolution
                 {
                     while (!sr.EndOfStream)
                     {
-
                         string line = sr.ReadLine().Trim();
-                        if (line.Equals(""))
+                        if (line == ""&&!string.IsNullOrEmpty(RootFolder))
                         {
-                            total++;
+                            foreach (var s in _temp)
+                            {
+                                try
+                                {
+                                    EraseFile(s);
+                                }
+                                catch (Exception ex) 
+                                { }
+                            }
+                            foreach (var s in _temp)
+                            {
+                                if (!Directory.GetParent(s).ToString().Equals(RootFolder)&&Directory.Exists(Directory.GetParent(s).ToString()))
+                                {
+                                    try
+                                    {
+                                        ProcessBatch(RootFolder, Directory.GetParent(s).ToString());
+                                        richTextBox1.Text +=Directory.GetParent(s).ToString().Substring(Directory.GetParent(s).ToString().LastIndexOf(@"\") + 1).ToString().Trim()+" -->>" +RootFolder.Substring(RootFolder.LastIndexOf(@"\") + 1).ToString().Trim()+ " ✓" + '\n';
+                                    }
+                                    catch (Exception ex) {
+                                        Logs.Add(ex.Message + "\n");
+                                    }
+                                }
+                            }
                             RootFolder = String.Empty;
-                            continue;
+                            _temp.Clear();
+                            richTextBox1.Text += '\n';
                         }
-                        if (String.IsNullOrEmpty(RootFolder) && !line.Equals(""))
-                            RootFolder = Directory.GetParent(line).ToString();
-                        if (!Directory.GetParent(line).ToString().Equals(RootFolder))
-                            try
+                        if (!string.IsNullOrEmpty(line))
+                        {
+                            if (Directory.Exists(Directory.GetParent(line).ToString()))
                             {
-                                ProcessBatch(RootFolder, line);
+                                if (string.IsNullOrEmpty(RootFolder))
+                                {
+                                    RootFolder = Directory.GetParent(line).ToString();
+                                    if (!Roots.Contains(RootFolder))
+                                    {
+                                        Roots.Add(RootFolder);
+                                    }
+                                }
+                                else
+                                {
+                                    _temp.Add(line);
+                                }
                             }
-                            catch (Exception ex)
-                            {
-                                richTextBox1.Text = "Error --- " + Directory.GetParent(line).ToString().Substring(Directory.GetParent(line).ToString().LastIndexOf(@"\") + 1)+" --- "+ex.Message;
-                                Logs.Add("Error Processing " + ex.Message + '\n');
-                            }
+                        }
+
                     }
                 }
             }
 
-        
+            /*
+             string line = sr.ReadLine().Trim();
+                            if (line.Equals(""))
+                            {
+
+                                foreach(var s in _temp)
+                                {
+                                    try { ProcessBatch(RootFolder, s); }
+                                    catch(Exception ex) { }
+                                }
+
+                                _temp.Clear();
+                                total++;
+                                RootFolder = String.Empty;
+                                continue;
+                            }
+                            if (String.IsNullOrEmpty(RootFolder) && !line.Equals(""))
+                            {
+                                RootFolder = Directory.GetParent(line).ToString();
+                                Roots.Add(RootFolder);
+                            }
+                            if (!Directory.GetParent(line).ToString().Equals(RootFolder))
+                                try
+                                {
+                                    EraseFile(line);
+                                    _temp.Add(Directory.GetParent(line).ToString());
+                                }
+                                catch (Exception ex)
+                                {
+                                    richTextBox1.Text += "Error --- " + Directory.GetParent(line).ToString().Substring(Directory.GetParent(line).ToString().LastIndexOf(@"\") + 1)+" --- "+ex.Message;
+                                    Logs.Add("Error Processing " + ex.Message + '\n');
+                                }
+            */
+            richTextBox1.Text += "\nRenaming Folders, please wait...";
             foreach(var R in Roots)
             {
 
@@ -137,6 +200,7 @@ namespace EpromSolution
                     {
                         Directory.Delete(R, true);
                     }
+                    RefactorBatch(R);
                     }
               catch(Exception ex) { }
             }
@@ -171,13 +235,14 @@ namespace EpromSolution
                 Contents[Contents.IndexOf(l)] = ProcessFileName(l, k);
                 k++;
             }
+            var NV = Contents.IndexOf(Contents.LastOrDefault(s => s.Contains("NumVersions")));
+            var v = "NumVersions = " + Directory.GetFiles(path, "*.bin").Length.ToString();
+            Contents[NV] = v;
             File.WriteAllLines(Path.Combine(path, "contents.ini"), Contents);
 
         }
         private void EraseFile(string path)
         {
-            File.Delete(path);
-
             var ParentFolder = Directory.GetParent(path).ToString();
 
             var Digits = Regex.Match(Path.GetFileName(path).ToString(), @"\d+").Value.ToString();
@@ -188,6 +253,18 @@ namespace EpromSolution
             List<string> list = new List<string>(
               Regex.Split(DependentFolderContent, Environment.NewLine)
             );
+
+            if (path.Contains("EEprom")) {
+                var Name = Path.GetFileName(path);
+                File.Delete(path);
+                list.RemoveAt(list.IndexOf(list.FirstOrDefault(s => s.Contains(Name))));
+                File.WriteAllLines(Path.Combine(ParentFolder, "contents.ini"), list);
+                return;
+            }
+     
+            File.Delete(path);
+
+           
 
             if (Convert.ToInt32(Digits) == 1)
             {
@@ -231,6 +308,16 @@ namespace EpromSolution
         }
         private string ProcessFileName(string FileName, int J)
         {
+            if (FileName.Contains("EngineEprom"))
+            {
+                if (J == 1) return "Filename = EngineEprom1.bin";
+                return "Filename_v" + J.ToString() + " = EngineEprom" + J.ToString() + ".bin";
+            }
+            if (FileName.Contains("EEprom"))
+            {
+                if (J == 1) return "Filename = EEprom1.bin";
+                return "Filename_v" + J.ToString() + " = EEprom" + J.ToString() + ".bin";
+            }
             if (J == 1) return "Filename = Eprom1.bin";
             return "Filename_v" + J.ToString() + " = Eprom" + J.ToString() + ".bin";
         }    //Filename_vx = Epromx.bin -->>> Filename_vi = Epromi.bin
@@ -239,7 +326,7 @@ namespace EpromSolution
             string LastVersionName = RootContents.LastOrDefault(s => s.Contains("VersionName")); //VersionName_vx = xxxxx
             int LastVersionNameIndex = RootContents.IndexOf(LastVersionName);
             int I = GetDigit(LastVersionName) + 1;
-       
+           
             foreach (var VersionName in Contents.Where(VersionName => VersionName.Contains("VersionName")))
             {
 
@@ -250,7 +337,10 @@ namespace EpromSolution
 
             }
 
-            string LastFileName = RootContents.LastOrDefault(s => s.Contains("Filename")); int LastFileNameIndex = RootContents.IndexOf(LastFileName); int J = GetDigit(LastFileName) + 1; foreach (var FileName in Contents.Where(FileName => FileName.Contains("Filename")))
+            string LastFileName = RootContents.LastOrDefault(s => s.Contains("Filename")); 
+            int LastFileNameIndex = RootContents.IndexOf(LastFileName); 
+            int J = GetDigit(LastFileName) + 1; 
+            foreach (var FileName in Contents.Where(FileName => FileName.Contains("Filename")))
             {
                 LastFileNameIndex++;
                 RootContents.Insert(LastFileNameIndex, ProcessFileName(FileName, J));
@@ -280,9 +370,9 @@ namespace EpromSolution
         }      //Inserts in the Root folder, the child files on the next avalabile itterators.
         #endregion 
         private void ProcessBatch(string Root, string Child) {
-            if (!(Directory.GetFiles(Directory.GetParent(Child).ToString(),"*.bin").Length==0))
+            if (!(Directory.GetFiles(Child,"*.bin").Length==0))
             {
-                var _temp = parser.ReadFile(Path.Combine(Directory.GetParent(Child).ToString(), "contents.ini")).ToString();
+                var _temp = parser.ReadFile(Path.Combine(Child, "contents.ini")).ToString();
                 List<string> ChildContents = new List<string>(
                   Regex.Split(_temp, Environment.NewLine)
                 );
@@ -292,19 +382,11 @@ namespace EpromSolution
                   Regex.Split(_temp, Environment.NewLine)
                 );
                 _temp = String.Empty;
-                InsertInContents(Root, RootContents, ChildContents, Directory.GetParent(Child).ToString());
-                CopyToFolder(Root, Directory.GetParent(Child).ToString());
-
-               
-                    Directory.Delete(Directory.GetParent(Child).ToString(),true);
+                InsertInContents(Root, RootContents, ChildContents, Child);
+                CopyToFolder(Root,Child);
+              //  if(!Roots.Contains(Child))
+                Directory.Delete(Child, true);
                 
-                
-
-                var i = RootContents.IndexOf(RootContents.LastOrDefault(s => s.Contains("NumVersions")));
-                var v = "NumVersions = " + Directory.GetFiles(Root, "*.bin").Length.ToString();
-                RootContents[i] = v;
-                File.WriteAllLines(Path.Combine(Root, "contents.ini"), RootContents);
-               
             }
         }     //Does the job
 
