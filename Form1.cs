@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
@@ -132,7 +132,7 @@ namespace EpromSolution
                             }
                             RootFolder = String.Empty;
                             _temp.Clear();
-                            richTextBox1.Text += '\n';
+                      
                         }
                         if (!string.IsNullOrEmpty(line))
                         {
@@ -200,7 +200,7 @@ namespace EpromSolution
                     {
                         Directory.Delete(R, true);
                     }
-                    RefactorBatch(R);
+                   RefactorBatch(R);
                     }
               catch(Exception ex) { }
             }
@@ -211,34 +211,44 @@ namespace EpromSolution
         #region
         private void RefactorBatch(string path)
         {
+            var x = Directory.GetFiles(path, "*.bin").Length;
             var i = 1;
-            foreach(var F in Directory.GetFiles(path, "*.bin"))
+            foreach (var F in Directory.GetFiles(path, "*.bin"))
             {
                 var oldName = F;
                 var newName = Path.Combine(path, "Eprom" + i + ".bin");
-                File.Move(oldName, newName);
+                if (!File.Exists(newName)) File.Move(oldName, newName);
                 i++;
             }
             var _temp = parser.ReadFile(Path.Combine(path, "contents.ini")).ToString();
             List<string> Contents = new List<string>(
               Regex.Split(_temp, Environment.NewLine)
             );
+             var NewList = Contents.Where(line => !line.Contains("Filename")).ToList();
             var j = 1;
-            foreach(var l in Contents.Where(l => l.Contains("VersionName")).ToList())
+            foreach (var l in NewList.Where(l => l.Contains("VersionName")).ToList())
             {
-                Contents[Contents.IndexOf(l)]= ProcessVersionName(l, j);
+                NewList[NewList.IndexOf(l)] = ProcessVersionName(l, j);
                 j++;
             }
-            var k = 1;
-            foreach(var l in Contents.Where(l => l.Contains("Filename")).ToList())
+            var FileNameIndex = NewList.IndexOf("[File1]") + 1;
+            for (int k = 1; k <= x; k++)
             {
-                Contents[Contents.IndexOf(l)] = ProcessFileName(l, k);
-                k++;
+                if (k == 1)
+                {
+                    NewList.Insert(FileNameIndex, "Filename = Eprom1.bin");
+                    FileNameIndex++;
+                }
+                else
+                {
+                    NewList.Insert(FileNameIndex, "Filename_v" + k.ToString() + " = Eprom" + k.ToString() + ".bin");
+                    FileNameIndex++;
+                }
             }
-            var NV = Contents.IndexOf(Contents.LastOrDefault(s => s.Contains("NumVersions")));
-            var v = "NumVersions = " + Directory.GetFiles(path, "*.bin").Length.ToString();
-            Contents[NV] = v;
-            File.WriteAllLines(Path.Combine(path, "contents.ini"), Contents);
+            var NV = NewList.IndexOf(NewList.LastOrDefault(s => s.Contains("NumVersions")));
+            var v = "NumVersions = " + x.ToString();
+            NewList[NV] = v;
+            File.WriteAllLines(Path.Combine(path, "contents.ini"), NewList);
 
         }
         private void EraseFile(string path)
@@ -253,15 +263,6 @@ namespace EpromSolution
             List<string> list = new List<string>(
               Regex.Split(DependentFolderContent, Environment.NewLine)
             );
-
-            if (path.Contains("EEprom")) {
-                var Name = Path.GetFileName(path);
-                File.Delete(path);
-                list.RemoveAt(list.IndexOf(list.FirstOrDefault(s => s.Contains(Name))));
-                File.WriteAllLines(Path.Combine(ParentFolder, "contents.ini"), list);
-                return;
-            }
-     
             File.Delete(path);
 
            
@@ -279,17 +280,7 @@ namespace EpromSolution
                 list.RemoveAt(list.IndexOf(IndexToRemoveVName));
 
             }
-            if (Convert.ToInt32(Digits) == 1)
-            {
-                var IndexToRemoveFName = list.FirstOrDefault(s => s.Contains("Filename ="));
-
-                list.RemoveAt(list.IndexOf(IndexToRemoveFName));
-            }
-            else
-            {
-                var IndexToRemoveFName = list.FirstOrDefault(s => s.Contains("Filename_v" + Digits));
-                list.RemoveAt(list.IndexOf(IndexToRemoveFName));
-            }
+            
             File.WriteAllLines(Path.Combine(ParentFolder, "contents.ini"), list);
 
         } //Deletes VersionName, Filename and File
@@ -306,21 +297,7 @@ namespace EpromSolution
             return x;
 
         }
-        private string ProcessFileName(string FileName, int J)
-        {
-            if (FileName.Contains("EngineEprom"))
-            {
-                if (J == 1) return "Filename = EngineEprom1.bin";
-                return "Filename_v" + J.ToString() + " = EngineEprom" + J.ToString() + ".bin";
-            }
-            if (FileName.Contains("EEprom"))
-            {
-                if (J == 1) return "Filename = EEprom1.bin";
-                return "Filename_v" + J.ToString() + " = EEprom" + J.ToString() + ".bin";
-            }
-            if (J == 1) return "Filename = Eprom1.bin";
-            return "Filename_v" + J.ToString() + " = Eprom" + J.ToString() + ".bin";
-        }    //Filename_vx = Epromx.bin -->>> Filename_vi = Epromi.bin
+     
         private void InsertInContents(string Root, List<string> RootContents, List<string> Contents, string Name)
         {
             string LastVersionName = RootContents.LastOrDefault(s => s.Contains("VersionName")); //VersionName_vx = xxxxx
@@ -336,16 +313,7 @@ namespace EpromSolution
                       I++;
 
             }
-
-            string LastFileName = RootContents.LastOrDefault(s => s.Contains("Filename")); 
-            int LastFileNameIndex = RootContents.IndexOf(LastFileName); 
-            int J = GetDigit(LastFileName) + 1; 
-            foreach (var FileName in Contents.Where(FileName => FileName.Contains("Filename")))
-            {
-                LastFileNameIndex++;
-                RootContents.Insert(LastFileNameIndex, ProcessFileName(FileName, J));
-                J++;
-            }
+           
 
             File.WriteAllLines(Path.Combine(Root, "contents.ini"), RootContents);
         } //Inserts in contents.ini the Filename, and versionname and WRITES it.
