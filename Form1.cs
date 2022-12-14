@@ -31,7 +31,6 @@ namespace EpromSolution
             OpenInput.Filter = "Text|*.txt|All|*.*";
 
         }
-
         private void OpenBtn_Click(object sender, EventArgs e)
         {
             FinalStatus.Text = "";
@@ -48,49 +47,7 @@ namespace EpromSolution
                 richTextBox1.Text += ex.Message;
                 StartBtn.Enabled = false;
             }
-           /* var RootFolder = String.Empty;
-
-            using (var fs = new FileStream(InputPath, FileMode.Open, FileAccess.Read))
-            {
-                using (var sr = new StreamReader(fs, Encoding.UTF8))
-                {
-                    while (!sr.EndOfStream)
-                    {
-                        string line = sr.ReadLine().Trim();
-                        if (line == "")
-                        {
-                         
-                            RootFolder = String.Empty;
-                        }
-                        else
-                        {
-                            if (string.IsNullOrEmpty(RootFolder))
-                            {
-                                RootFolder = Directory.GetParent(line).ToString();
-                                Roots.Add(RootFolder);
-                            }
-                            else
-                            {
-
-                                try
-                                {
-                                    EraseFile(line);
-                                 }
-                                catch (Exception ex)
-                                {
-                                    richTextBox1.Text += "Error --- " + Directory.GetParent(line).ToString().Substring(Directory.GetParent(line).ToString().LastIndexOf(@"\") + 1) + " --- " + ex.Message + '\n';
-                                    Logs.Add("Error Trimmig " + ex.Message + '\n');
-                                }
-
-                            }
-                        }
-                    }
-                }
-                FinalStatus.Text += "Counted " + Roots.Count.ToString() + " batches";
-            }
-*/
         }
-
         private void StartBtn_Click(object sender, EventArgs e)
         {
             var _temp = new List<string>();
@@ -156,40 +113,6 @@ namespace EpromSolution
                     }
                 }
             }
-
-            /*
-             string line = sr.ReadLine().Trim();
-                            if (line.Equals(""))
-                            {
-
-                                foreach(var s in _temp)
-                                {
-                                    try { ProcessBatch(RootFolder, s); }
-                                    catch(Exception ex) { }
-                                }
-
-                                _temp.Clear();
-                                total++;
-                                RootFolder = String.Empty;
-                                continue;
-                            }
-                            if (String.IsNullOrEmpty(RootFolder) && !line.Equals(""))
-                            {
-                                RootFolder = Directory.GetParent(line).ToString();
-                                Roots.Add(RootFolder);
-                            }
-                            if (!Directory.GetParent(line).ToString().Equals(RootFolder))
-                                try
-                                {
-                                    EraseFile(line);
-                                    _temp.Add(Directory.GetParent(line).ToString());
-                                }
-                                catch (Exception ex)
-                                {
-                                    richTextBox1.Text += "Error --- " + Directory.GetParent(line).ToString().Substring(Directory.GetParent(line).ToString().LastIndexOf(@"\") + 1)+" --- "+ex.Message;
-                                    Logs.Add("Error Processing " + ex.Message + '\n');
-                                }
-            */
             richTextBox1.Text += "\nRenaming Folders, please wait...";
             foreach(var R in Roots)
             {
@@ -206,6 +129,7 @@ namespace EpromSolution
             }
             FinalStatus.Text = "Operation Completed";
             File.WriteAllLines("EPROMLOGS.txt", Logs);
+            File.WriteAllLines("DeletedFolders.txt", FoldersToDelete);
 
         }
         #region
@@ -250,7 +174,7 @@ namespace EpromSolution
             NewList[NV] = v;
             File.WriteAllLines(Path.Combine(path, "contents.ini"), NewList);
 
-        }
+        } 
         private void EraseFile(string path)
         {
             var ParentFolder = Directory.GetParent(path).ToString();
@@ -297,8 +221,7 @@ namespace EpromSolution
             return x;
 
         }
-     
-        private void InsertInContents(string Root, List<string> RootContents, List<string> Contents, string Name)
+        private void InsertInContents(string Root, List<string> RootContents, List<string> Contents)
         {
             string LastVersionName = RootContents.LastOrDefault(s => s.Contains("VersionName")); //VersionName_vx = xxxxx
             int LastVersionNameIndex = RootContents.IndexOf(LastVersionName);
@@ -308,7 +231,7 @@ namespace EpromSolution
             {
 
                 LastVersionNameIndex++;
-                RootContents.Insert(LastVersionNameIndex, ProcessVersionName(VersionName, I) + "   --->>>  " + Name.Substring(Name.LastIndexOf(@"\")+1));
+                RootContents.Insert(LastVersionNameIndex, ProcessVersionName(VersionName, I));
     
                       I++;
 
@@ -350,9 +273,9 @@ namespace EpromSolution
                   Regex.Split(_temp, Environment.NewLine)
                 );
                 _temp = String.Empty;
-                InsertInContents(Root, RootContents, ChildContents, Child);
-                CopyToFolder(Root,Child);
-              //  if(!Roots.Contains(Child))
+                InsertInContents(Root, RootContents, ChildContents);
+                CopyToFolder(Root, Child);
+                FoldersToDelete.Add(Child.Substring(Child.LastIndexOf(@"\")+1));
                 Directory.Delete(Child, true);
                 
             }
